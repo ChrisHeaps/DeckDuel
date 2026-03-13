@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="../DeckDuelAPI.Tests/DeckDuelAPI.Tests.csproj" />
+  <Project Path="DeckDuelAPI.csproj" />
+</Solution>
