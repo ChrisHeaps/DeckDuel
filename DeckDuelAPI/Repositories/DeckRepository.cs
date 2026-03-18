@@ -61,27 +61,7 @@ namespace DeckDuel2.Repositories
         }
 
         public async Task<CardDto[]> GetDeckCardsAsync(int deckId, int? userId)
-        {
-            bool deckExistsForUser = false;
-            if (userId != null)
-            {
-                // Ensure the deck belongs to the user
-                deckExistsForUser = await _db.Decks
-                    .AnyAsync(d => d.Id == deckId && d.UserId == userId);
-            }
-            else
-            {
-                deckExistsForUser = true;
-            }
-
-
-            if (!deckExistsForUser)
-            {
-                // Option: throw an exception (e.g., UnauthorizedAccessException or custom)
-                // or return an empty array as shown below.
-                return Array.Empty<CardDto>();
-            }
-
+        {            
             return await _db.Cards
                 .Where(cd => cd.DeckId == deckId)
                 .Select(c => new CardDto

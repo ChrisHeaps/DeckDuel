@@ -17,7 +17,7 @@ const router = createBrowserRouter([
       { path: "/", element: <Dashboard /> },
       { path: "/deck/:id", element: <DeckView /> },
       { path: "/deck/generate", element: <GenerateDeck /> },
-      { path: "/game/:id", element: <GameView /> },
+      { path: "/usergame/:id", element: <GameView /> },
       { path: "/game/create", element: <CreateGame /> },
     ],
   },

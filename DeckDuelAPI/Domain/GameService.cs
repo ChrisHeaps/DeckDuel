@@ -11,8 +11,9 @@ namespace DeckDuel2.Domain
         Task<DDResult<Game>> JoinGameAsync(int gameId, int userId);
         Task<DDResult<OpenGameDto[]>> GetOpenGamesAsync(int userId);
         Task<DDResult<ActiveGameDto[]>> GetActiveGamesAsync(int userId);
-        Task<DDResult<Game>> TakeTurnAsync(int gameId, int userId, int categoryTypeId);  
+        Task<DDResult<Game>> TakeTurnAsync(int gameId, int userId, int categoryTypeId);
         Task<DDResult<TurnCardDto>> GetCurrentHandTopCardAsync(int userGameId, int userId);
+        Task<DDResult<GameStatusDto>> GetCurrentGameStatusAsync(int userGameId, int userId);
     }
 
     public class GameService : IGameService
@@ -29,10 +30,8 @@ namespace DeckDuel2.Domain
 
         public async Task<DDResult<UserGameDto>> CreateGameAsync(int deckId, int userId)
         {
-            //TODO: Check if the deck exists and if the user has access to it
-            //TODO: Check if there's already an open game for this user/deck combination
-            
             var userGameDto = await _gameRepo.CreateGameAsync(deckId, userId);
+            await _notifier.NotifyGameOpenedAsync(userGameDto.GameId);
             return DDResult<UserGameDto>.Ok(userGameDto);
         }
 
@@ -102,7 +101,7 @@ namespace DeckDuel2.Domain
             await _gameRepo.SaveChangesAsync();
 
             //notify all players of game start
-            await _notifier.NotifyGameStartedAsync(gameId, _firstPlayerId);
+            await _notifier.NotifyGameStartedAsync(gameId);
 
             return DDResult<Game>.Ok(game);
         }
@@ -124,9 +123,12 @@ namespace DeckDuel2.Domain
             var existingUserGame = await _gameRepo.GetUserGameAsync(gameId, userId);
             if (existingUserGame != null)   
                 return DDResult<Game>.Ok(game); // User already in game, return existing game info
-            
+
             // 4. Add user to game
             await _gameRepo.AddUserToGameAsync(gameId, userId);
+
+            await _notifier.NotifyGameJoinedAsync(game.Id);
+
             return DDResult<Game>.Ok(game);
 
         }
@@ -230,70 +232,126 @@ namespace DeckDuel2.Domain
                 if (turnScores.Count == 0)
                     return DDResult<Game>.Fail(DDError.InvalidInput, "No valid turns found.");
 
-                // Determine winner (highest score)
-                var winner = turnScores.OrderByDescending(ts => ts.score).First();
-                var winnerUserGameId = winner.turn.UserGameId;
                 var allPlayedCards = turnScores.Select(ts => ts.cardId).ToList();
 
-                // Create new hands for all players
-                foreach (var usersStillIn in userGames)
+                // Determine winner (highest score)
+                var winner = turnScores.OrderByDescending(ts => ts.score).First();
+
+
+                //if at this point there is a tie for the highest score we add all cards to Game.DrawPileCardList and start a new round 
+                //check for tie
+                var highestScore = winner.score;
+                var tiedPlayers = turnScores.Where(ts => ts.score == highestScore).ToList();
+                if (tiedPlayers.Count > 1)
                 {
-                    var ug = await _gameRepo.GetUserGameAsync(game.Id, usersStillIn);
-                    if (ug == null) continue;
-
-                    var currentHand = await _gameRepo.GetHandAsync(ug.Id, game.CurrentRoundNumber);
-                    if (currentHand == null) continue;
-
-                    var currentCards = currentHand.CardList
-                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                        .Select(x => int.TryParse(x, out var id) ? id : 0)
-                        .Where(x => x > 0)
-                        .ToList();
-
-                    // Find this player's played card
-                    var playedCardId = turnScores.FirstOrDefault(ts => ts.turn.UserGameId == ug.Id).cardId;
-
-                    // Remove the played card from hand
-                    currentCards.Remove(playedCardId);
-
-                    List<int> newHandCards;
-
-                    if (ug.Id == winnerUserGameId)
-                    {
-                        // Winner: add their played card back + all other played cards
-                        newHandCards = currentCards;
-                        newHandCards.Add(playedCardId); // their card first
-                        newHandCards.AddRange(allPlayedCards.Where(c => c != playedCardId)); // won cards
-                    }
-                    else
-                    {
-                        // Loser: just the remaining cards (already removed played card)
-                        newHandCards = currentCards;
-                    }
-
-                    // Only create hand if player has cards left
-                    if (newHandCards.Count > 0)
-                    {
-                        await _gameRepo.CreateHandAsync(
-                            game.Id,
-                            game.CurrentRoundNumber + 1,
-                            usersStillIn,
-                            string.Join(",", newHandCards)
-                        );
-                    }
+                    // It's a tie - add all played cards to the draw pile and start a new round with the same category
+                    var allPlayedCardIds = turnScores.Select(ts => ts.cardId).ToList();
+                    var existingDrawPile = string.IsNullOrWhiteSpace(game.DrawPileCardList)
+                        ? new List<int>()
+                        : game.DrawPileCardList.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(x => int.TryParse(x, out var id) ? id : 0)
+                            .Where(x => x > 0)
+                            .ToList();
+                    existingDrawPile.AddRange(allPlayedCardIds);
+                    game.DrawPileCardList = string.Join(",", existingDrawPile);
+                    // Start new round with same category
+                    game.CurrentRoundNumber++;
+                    await _gameRepo.SaveChangesAsync();
+                    // Notify players of new round due to tie
+                    await _notifier.NotifyTurnChangedAsync(game.Id, game.CurrentRoundUserGameId, game.CurrentRoundNumber);
+                    return DDResult<Game>.Ok(game);
                 }
+                else
+                {
 
-                // Advance to next round
-                game.CurrentRoundNumber++;
-                game.CurrentRoundUserGameId = winnerUserGameId; // winner chooses category next
-                await _gameRepo.SaveChangesAsync();
+                    var winnerUserGameId = winner.turn.UserGameId;
 
-                // Notify players
-                //await _notifier.NotifyRoundCompletedAsync(game.Id, winnerUserGameId, game.CurrentRoundNumber);
+                    // Create new hands for all players
+                    foreach (var usersStillIn in userGames)
+                    {
+                        var ug = await _gameRepo.GetUserGameAsync(game.Id, usersStillIn);
+                        if (ug == null) continue;
 
-                return DDResult<Game>.Ok(game);
+                        var currentHand = await _gameRepo.GetHandAsync(ug.Id, game.CurrentRoundNumber);
+                        if (currentHand == null) continue;
 
+                        var currentCards = currentHand.CardList
+                            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(x => int.TryParse(x, out var id) ? id : 0)
+                            .Where(x => x > 0)
+                            .ToList();
+
+                        // Find this player's played card
+                        var playedCardId = turnScores.FirstOrDefault(ts => ts.turn.UserGameId == ug.Id).cardId;
+
+                        // Remove the played card from hand
+                        currentCards.Remove(playedCardId);
+
+                        List<int> newHandCards;
+
+                        if (ug.Id == winnerUserGameId)
+                        {
+                            // Winner: add their played card back + all other played cards
+                            newHandCards = currentCards;
+                            newHandCards.Add(playedCardId); // their card first
+                            newHandCards.AddRange(allPlayedCards.Where(c => c != playedCardId)); // won cards
+                        }
+                        else
+                        {
+                            // Loser: just the remaining cards (already removed played card)
+                            newHandCards = currentCards;
+                        }
+
+                        // Only create hand if player has cards left
+                        if (newHandCards.Count > 0)
+                        {
+                            await _gameRepo.CreateHandAsync(
+                                game.Id,
+                                game.CurrentRoundNumber + 1,
+                                usersStillIn,
+                                string.Join(",", newHandCards)
+                            );
+                        }
+                    }
+
+                    //if at this point the winning player has Deck.Count cards they have won the game - set FinishedAt and return
+                    var winnerHand = await _gameRepo.GetHandAsync(winnerUserGameId, game.CurrentRoundNumber + 1);
+                    var winnerCardCount = string.IsNullOrWhiteSpace(winnerHand?.CardList)
+                        ? 0
+                        : winnerHand!.CardList
+                            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            .Length;
+                    var totalCardsInGame = await _gameRepo.GetTotalCardCountForGameAsync(game.Id);
+                    if (winnerCardCount >= totalCardsInGame)
+                    {
+                        game.FinishedAt = DateTime.UtcNow;
+                        game.WinningUserGameId = winnerUserGameId;
+
+                        // Move state to the hand round you just created
+                        game.CurrentRoundNumber++;
+                        game.CurrentRoundUserGameId = winnerUserGameId;
+
+                        await _gameRepo.SaveChangesAsync();
+                        await _notifier.NotifyGameFinishedAsync(game.Id);
+                        return DDResult<Game>.Ok(game);
+                    }
+
+                    // Advance to next round
+                    game.CurrentRoundNumber++;
+                    game.CurrentRoundUserGameId = winnerUserGameId; // winner chooses category next
+                    await _gameRepo.SaveChangesAsync();
+
+                    // Notify players
+                    await _notifier.NotifyTurnChangedAsync(game.Id, winnerUserGameId, game.CurrentRoundNumber);
+
+                    return DDResult<Game>.Ok(game);
+
+                }
+               
             }
+
+            // if we reach here, a turn was taken but the round is not complete yet
+            await _notifier.NotifyTurnChangedAsync(game.Id, userGame.Id, game.CurrentRoundNumber);
 
             return DDResult<Game>.Ok(game);
         }
@@ -340,6 +398,7 @@ namespace DeckDuel2.Domain
 
             var turnCard = new TurnCardDto
             {
+                GameId = game.Id,
                 CardId = cardDto.Id,
                 Name = cardDto.Name,
                 Categories = cardDto.Categories,
@@ -347,6 +406,96 @@ namespace DeckDuel2.Domain
             };
 
             return DDResult<TurnCardDto>.Ok(turnCard);
+        }
+
+        public async Task<DDResult<GameStatusDto>> GetCurrentGameStatusAsync(int userGameId, int userId)
+        {
+            var requestingUserGame = await _gameRepo.GetUserGameByIdAsync(userGameId);
+            if (requestingUserGame == null)
+                return DDResult<GameStatusDto>.Fail(DDError.NotFound, "UserGame not found.");
+
+            if (requestingUserGame.UserId != userId)
+                return DDResult<GameStatusDto>.Fail(DDError.NotOwner, "Not allowed to view this game status.");
+
+            var game = await _gameRepo.GetGameAsync(requestingUserGame.GameId);
+            if (game == null)
+                return DDResult<GameStatusDto>.Fail(DDError.NotFound, "Game not found.");
+
+            var currentRound = await _gameRepo.GetRoundAsync(game.Id, game.CurrentRoundNumber);
+
+            CategoryType? categoryType = null;
+            if (currentRound?.CategoryTypeId != null)
+                categoryType = await _gameRepo.GetCategoryTypeAsync(currentRound.CategoryTypeId);
+
+            var userGames = await _gameRepo.GetUserGamesAsync(game.Id);
+            var turns = await _gameRepo.GetTurnsForRoundAsync(game.Id, game.CurrentRoundNumber);
+
+            var turnScoresByUserGameId = new Dictionary<int, int>();
+            if (categoryType != null)
+            {
+                foreach (var turn in turns)
+                {
+                    var card = await _gameRepo.GetCardAsync(turn.CardId);
+                    var score = card?.Categories
+                        .FirstOrDefault(c => c.Position == categoryType.Position)
+                        ?.Score;
+
+                    if (score.HasValue)
+                        turnScoresByUserGameId[turn.UserGameId] = score.Value;
+                }
+            }
+
+            var players = new List<GameStatusPlayerDto>();
+
+            foreach (var ug in userGames)
+            {
+                int handCardCount;
+
+                if (game.FinishedAt != null)
+                {
+                    // Terminal state: only winner keeps cards
+                    handCardCount = ug.Id == game.WinningUserGameId
+                        ? (await _gameRepo.GetHandAsync(ug.Id, game.CurrentRoundNumber) is { CardList: var list } && !string.IsNullOrWhiteSpace(list)
+                            ? list.Split(',', StringSplitOptions.RemoveEmptyEntries).Length
+                            : 0)
+                        : 0;
+                }
+                else
+                {
+                    var hand = await _gameRepo.GetHandAsync(ug.Id, game.CurrentRoundNumber)
+                        ?? await _gameRepo.GetLatestHandAsync(ug.Id);
+
+                    handCardCount = string.IsNullOrWhiteSpace(hand?.CardList)
+                        ? 0
+                        : hand.CardList.Split(',', StringSplitOptions.RemoveEmptyEntries).Length;
+                }
+
+                players.Add(new GameStatusPlayerDto
+                {
+                    InGameName = ug.User?.InGameName ?? string.Empty,
+                    HandCardCount = handCardCount,
+                    CurrentTurnScore = turnScoresByUserGameId.TryGetValue(ug.Id, out var score) ? score : null
+                });
+            }
+
+            var winningUserInGameName = game.WinningUserGameId == null
+                ? null
+                : userGames
+                    .FirstOrDefault(ug => ug.Id == game.WinningUserGameId)?
+                    .User?
+                    .InGameName;
+
+            var dto = new GameStatusDto
+{
+    GameId = game.Id,
+    CurrentRoundCategoryName = categoryType?.Description,
+    Players = players,
+    IsGameOver = game.FinishedAt != null,
+    WinningUserGameId = game.WinningUserGameId,
+    WinningUserInGameName = winningUserInGameName
+};
+
+            return DDResult<GameStatusDto>.Ok(dto);
         }
     }
 }

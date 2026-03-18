@@ -19,7 +19,7 @@ export async function apiFetch(
     // Optional: auto-logout on 401
     if (response.status === 401) {
       localStorage.removeItem("deckdueljwt")
-      window.location.href = "/login"
+      window.location.href = "/"
     }
 
     throw new Error("API request failed")

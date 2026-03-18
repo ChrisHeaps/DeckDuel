@@ -11,6 +11,7 @@ import {
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api/apiClient";
+import { buildApiUrl } from "../api/config";
 import { toaster } from "./ui/toaster";
 
 export default function GenerateDeck() {
@@ -41,7 +42,7 @@ export default function GenerateDeck() {
 
     try {
       setLoading(true);
-      await apiFetch("https://localhost:7119/generateDeck", {
+      await apiFetch(buildApiUrl("/generateDeck"), {
         method: "POST",
         body: JSON.stringify({ deckPrompt: deckPrompt.trim() }),
       });

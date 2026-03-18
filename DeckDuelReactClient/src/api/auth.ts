@@ -15,8 +15,10 @@ export type RegisterRequest = {
   email: string | null;
 };
 
+import { buildApiUrl } from "./config";
+
 export async function login(request: LoginRequest): Promise<LoginResponse> {
-  const response = await fetch("https://localhost:7119/login", {
+  const response = await fetch(buildApiUrl("/login"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -33,7 +35,7 @@ export async function login(request: LoginRequest): Promise<LoginResponse> {
 }
 
 export async function register(request: RegisterRequest): Promise<void> {
-  const response = await fetch("https://localhost:7119/registerUser", {
+  const response = await fetch(buildApiUrl("/registerUser"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

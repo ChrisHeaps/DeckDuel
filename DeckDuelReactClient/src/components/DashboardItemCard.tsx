@@ -21,12 +21,12 @@ export default function DashboardItemCard({
       width="115px"
       height="115px"
       p={2}
-      bg={isOwned ? "teal.50" : "gray.50"}
+      bg={isOwned ? "teal.50" : "gray.100"}
       borderWidth="2px"
       borderColor={isOwned ? "teal.400" : "transparent"}
       borderRadius="md"
       _hover={{
-        bg: isOwned ? "teal.100" : "gray.100",
+        bg: isOwned ? "teal.100" : "gray.200",
         transform: "scale(1.02)",
       }}
       cursor={onClick ? "pointer" : "default"}

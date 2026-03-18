@@ -8,9 +8,12 @@ import {
   Button,
   Badge,
 } from "@chakra-ui/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api/apiClient";
+import { buildApiUrl } from "../api/config";
+import { useAuth } from "../context/AuthContext";
+import { useGameHub } from "../hooks/useGameHub";
 import DashboardItemCard from "./DashboardItemCard";
 
 type DeckInfo = {
@@ -38,6 +41,7 @@ type OpenGameInfo = {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { token } = useAuth();
   const [myGames, setMyGames] = useState<GameInfo[]>([]);
   const [openGames, setOpenGames] = useState<OpenGameInfo[]>([]);
   const [myDecks, setMyDecks] = useState<DeckInfo[]>([]);
@@ -48,74 +52,111 @@ export default function Dashboard() {
   const [loadingSharedDecks, setLoadingSharedDecks] = useState(true);
   const [actingGameId, setActingGameId] = useState<number | null>(null);
 
+  const fetchMyGames = useCallback(async () => {
+    try {
+      setLoadingMyGames(true);
+      const response = await apiFetch(buildApiUrl("/games/active"));
+      const data = await response.json();
+      console.log("Fetched my games:", data);
+      setMyGames(data);
+    } catch (error) {
+      console.error("Failed to load my games:", error);
+    } finally {
+      setLoadingMyGames(false);
+    }
+  }, []);
+
+  const fetchMyDecks = useCallback(async () => {
+    try {
+      setLoadingMyDecks(true);
+      const response = await apiFetch(buildApiUrl("/decks"));
+      const data = await response.json();
+      setMyDecks(data);
+    } catch (error) {
+      console.error("Failed to load my decks:", error);
+    } finally {
+      setLoadingMyDecks(false);
+    }
+  }, []);
+
+  const fetchOpenGames = useCallback(async () => {
+    try {
+      setLoadingOpenGames(true);
+      const response = await apiFetch(buildApiUrl("/games/open"));
+      const data = await response.json();
+      console.log("Fetched open games:", data);
+      setOpenGames(data);
+    } catch (error) {
+      console.error("Failed to load open games:", error);
+    } finally {
+      setLoadingOpenGames(false);
+    }
+  }, []);
+
+  const fetchSharedDecks = useCallback(async () => {
+    try {
+      setLoadingSharedDecks(true);
+      const response = await apiFetch(buildApiUrl("/getSharedDeckNames"));
+      const data = await response.json();
+      setSharedDecks(data);
+    } catch (error) {
+      console.error("Failed to load shared decks:", error);
+    } finally {
+      setLoadingSharedDecks(false);
+    }
+  }, []);
+
+  const fetchMyGamesRef = useRef(fetchMyGames);
+  const fetchOpenGamesRef = useRef(fetchOpenGames);
+
   useEffect(() => {
-    const fetchMyGames = async () => {
-      try {
-        const response = await apiFetch("https://localhost:7119/games/active");
-        const data = await response.json();
-        console.log("Fetched my games:", data);
-        setMyGames(data);
-      } catch (error) {
-        console.error("Failed to load my games:", error);
-      } finally {
-        setLoadingMyGames(false);
-      }
-    };
+    fetchMyGamesRef.current = fetchMyGames;
+  }, [fetchMyGames]);
 
-    const fetchMyDecks = async () => {
-      try {
-        const response = await apiFetch("https://localhost:7119/decks");
-        const data = await response.json();
-        setMyDecks(data);
-      } catch (error) {
-        console.error("Failed to load my decks:", error);
-      } finally {
-        setLoadingMyDecks(false);
-      }
-    };
+  useEffect(() => {
+    fetchOpenGamesRef.current = fetchOpenGames;
+  }, [fetchOpenGames]);
 
-    const fetchOpenGames = async () => {
-      try {
-        const response = await apiFetch("https://localhost:7119/games/open");
-        const data = await response.json();
-        console.log("Fetched open games:", data);
-        setOpenGames(data);
-      } catch (error) {
-        console.error("Failed to load open games:", error);
-      } finally {
-        setLoadingOpenGames(false);
-      }
-    };
+  const hubHandlers = useMemo(
+    () => ({
+      GameOpened: () => {
+        fetchMyGamesRef.current();
+        fetchOpenGamesRef.current();
+      },
+      GameJoined: () => {
+        fetchMyGamesRef.current();
+        fetchOpenGamesRef.current();
+      },
+      GameStarted: () => {
+        fetchMyGamesRef.current();
+        fetchOpenGamesRef.current();
+      },
+      GameFinished: () => {
+        fetchMyGamesRef.current();
+        fetchOpenGamesRef.current();
+      },
+    }),
+    [],
+  );
 
-    const fetchSharedDecks = async () => {
-      try {
-        const response = await apiFetch(
-          "https://localhost:7119/getSharedDeckNames",
-        );
-        const data = await response.json();
-        setSharedDecks(data);
-      } catch (error) {
-        console.error("Failed to load shared decks:", error);
-      } finally {
-        setLoadingSharedDecks(false);
-      }
-    };
+  useGameHub({ token, handlers: hubHandlers, enabled: !!token });
 
+  useEffect(() => {
     fetchMyGames();
     fetchMyDecks();
     fetchOpenGames();
     fetchSharedDecks();
-  }, []);
+  }, [fetchMyGames, fetchMyDecks, fetchOpenGames, fetchSharedDecks]);
 
   const handleOpenGameAction = async (game: OpenGameInfo) => {
     const endpoint = game.isOwned
-      ? `https://localhost:7119/games/${game.gameId}/start`
-      : `https://localhost:7119/games/${game.gameId}/players`;
+      ? buildApiUrl(`/games/${game.gameId}/start`)
+      : buildApiUrl(`/games/${game.gameId}/players`);
 
     try {
       setActingGameId(game.gameId);
       await apiFetch(endpoint, { method: "POST" });
-      navigate(`/game/${game.gameId}`);
+      await Promise.all([fetchMyGames(), fetchOpenGames()]);
     } catch (error) {
       console.error(
         `Failed to ${game.isOwned ? "start" : "join"} game ${game.gameId}:`,
@@ -144,7 +185,7 @@ export default function Dashboard() {
                     label={game.deckTopic}
                     badgeLabel={isMyTurn ? "My Turn" : undefined}
                     badgeColorPalette="purple"
-                    onClick={() => navigate(`/game/${game.userGameId}`)}
+                    onClick={() => navigate(`/usergame/${game.userGameId}`)}
                   />
                 );
               })}
@@ -164,13 +205,14 @@ export default function Dashboard() {
             {openGames.map((game) => {
               const hasJoined = game.joined ?? game.Joined ?? false;
               const showActionButton = game.isOwned || !hasJoined;
+              const cannotStartYet = game.isOwned && game.userNames.length <= 1;
 
               return (
                 <Box
                   key={game.gameId}
                   width="240px"
                   p={4}
-                  bg={game.isOwned ? "teal.50" : "gray.50"}
+                  bg={game.isOwned ? "teal.50" : "gray.100"}
                   borderWidth="1px"
                   borderColor={game.isOwned ? "teal.300" : "gray.200"}
                   borderRadius="md"
@@ -183,7 +225,7 @@ export default function Dashboard() {
                   <Flex justify="space-between" align="start" gap={2}>
                     <Text fontWeight="semibold">{game.deckTopic}</Text>
                     <Badge colorPalette={game.isOwned ? "green" : "gray"}>
-                      {game.isOwned ? "Owned" : "Open"}
+                      {game.isOwned ? "Owned" : "Waiting"}
                     </Badge>
                   </Flex>
 
@@ -207,7 +249,7 @@ export default function Dashboard() {
                         handleOpenGameAction(game);
                       }}
                       loading={actingGameId === game.gameId}
-                      disabled={actingGameId !== null}
+                      disabled={actingGameId !== null || cannotStartYet}
                     >
                       {game.isOwned ? "Start" : "Join"}
                     </Button>

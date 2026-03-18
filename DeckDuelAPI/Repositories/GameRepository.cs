@@ -139,7 +139,10 @@ namespace DeckDuel2.Repositories
 
         public async Task<UserGame[]> GetUserGamesAsync(int gameId)
         {
-            return await _db.UserGames.Where(ug => ug.GameId == gameId).ToArrayAsync();
+            return await _db.UserGames
+                .Include(ug => ug.User)
+                .Where(ug => ug.GameId == gameId)
+                .ToArrayAsync();
         }
 
         public async Task<UserGame[]> GetUserGamesForUserAsync(int userId)
@@ -293,5 +296,16 @@ namespace DeckDuel2.Repositories
                 .ToArrayAsync();
         }
 
+        public async Task<int> GetTotalCardCountForGameAsync(int gameId)
+        {
+            return await _db.Games
+                .Where(g => g.Id == gameId)
+                .Join(
+                    _db.Cards,
+                    g => g.DeckId,
+                    c => c.DeckId,
+                    (_, c) => c.Id)
+                .CountAsync();
+        }
     }
 }

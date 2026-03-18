@@ -1,5 +1,6 @@
 import { Box, VStack, Button, Heading } from "@chakra-ui/react";
 import { apiFetch } from "../api/apiClient";
+import { buildApiUrl } from "../api/config";
 
 export default function Sidebar() {
   return (
@@ -19,9 +20,7 @@ export default function Sidebar() {
           variant="ghost"
           onClick={async () => {
             try {
-              const response = await apiFetch(
-                "https://localhost:7119/getMyDecks",
-              );
+              const response = await apiFetch(buildApiUrl("/getMyDecks"));
               const decks = await response.json();
               console.log("Decks:", decks);
               // Update state with decks here

@@ -13,6 +13,7 @@ import {
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { apiFetch } from "../api/apiClient";
+import { buildApiUrl } from "../api/config";
 import { LuChevronLeft, LuChevronRight } from "react-icons/lu";
 
 type Category = {
@@ -43,9 +44,7 @@ export default function DeckView() {
       if (!id) return;
 
       try {
-        const response = await apiFetch(
-          `https://localhost:7119/decks/${id}/cards`,
-        );
+        const response = await apiFetch(buildApiUrl(`/decks/${id}/cards`));
         const data = await response.json();
         setCards(data);
       } catch (error) {
@@ -80,7 +79,7 @@ export default function DeckView() {
         <Text fontSize="lg" color="gray.500">
           No cards found in this deck
         </Text>
-        <Button onClick={() => navigate("/")}>Back to Dashboard</Button>
+        <Button onClick={() => navigate("/")}>← Home</Button>
       </Flex>
     );
   }
@@ -89,7 +88,7 @@ export default function DeckView() {
     <Flex flex="1" direction="column" bg="gray.50" p={8} overflow="auto">
       <Box mb={6}>
         <Button onClick={() => navigate("/")} size="sm" mb={4}>
-          ← Back to Dashboard
+          ← Home
         </Button>
         <Heading size="lg">Deck Cards</Heading>
         <Text color="gray.600" mt={2}>

@@ -36,6 +36,8 @@ namespace DeckDuel2.Repositories
         Task<UserGame?> GetUserGameByIdAsync(int userGameId);
         Task<Hand?> GetLatestHandAsync(int userGameId);
         Task<CardDto?> GetCardDetailsDtoAsync(int cardId);
+
+        Task<int> GetTotalCardCountForGameAsync(int gameId);
     }
 }
 

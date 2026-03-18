@@ -19,7 +19,7 @@
 
         public string? DrawPileCardList { get; set; } = string.Empty;
 
-        public int? WinningUserId { get; set; }
+        public int? WinningUserGameId { get; set; }
 
         public ICollection<UserGame> UserGames { get; set; } = new List<UserGame>();
 

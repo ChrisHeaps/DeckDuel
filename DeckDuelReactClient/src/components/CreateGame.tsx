@@ -10,6 +10,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api/apiClient";
+import { buildApiUrl } from "../api/config";
 import { toaster } from "./ui/toaster";
 
 type DeckInfo = {
@@ -28,7 +29,7 @@ export default function CreateGame() {
   useEffect(() => {
     const fetchDecks = async () => {
       try {
-        const response = await apiFetch("https://localhost:7119/decks");
+        const response = await apiFetch(buildApiUrl("/decks"));
         const data = await response.json();
         setDecks(data);
       } catch (error) {
@@ -58,7 +59,7 @@ export default function CreateGame() {
     try {
       setCreating(true);
 
-      await apiFetch("https://localhost:7119/games", {
+      await apiFetch(buildApiUrl("/games"), {
         method: "POST",
         body: JSON.stringify({ deckId: selectedDeckId }),
       });
@@ -102,7 +103,7 @@ export default function CreateGame() {
           Create New Game
         </Heading>
         <Text color="gray.600" mb={6}>
-          Choose one of your decks to create a new game.
+          Choose a deck to create a new game.
         </Text>
 
         {loading ? (

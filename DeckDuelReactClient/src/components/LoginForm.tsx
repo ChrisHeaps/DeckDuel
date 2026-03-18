@@ -1,6 +1,7 @@
 import { Box, Button, Input, VStack, Heading, Field } from "@chakra-ui/react";
 import { useDialogContext } from "@chakra-ui/react";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 //import { login } from "../api/auth";
 import { useAuth } from "../context/AuthContext";
 import { toaster } from "./ui/toaster";
@@ -13,6 +14,7 @@ type LoginFormData = {
 export default function LoginForm() {
   const { login } = useAuth();
   const dialog = useDialogContext();
+  const navigate = useNavigate();
   const [formData, setFormData] = useState<LoginFormData>({
     username: "",
     password: "",
@@ -53,6 +55,8 @@ export default function LoginForm() {
         title: "Login successful",
         type: "success",
       });
+
+      navigate("/", { replace: true });
 
       // Close dialog using context
       dialog.setOpen(false);
