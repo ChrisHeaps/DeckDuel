@@ -46,8 +46,12 @@ jobs:
           
       - name: Debug secret presence
         run: |
-          if [ -z "${{ secrets.AZURE_CLIENT_SECRET }}" ]; then echo "SECRET MISSING"; else echo "SECRET OK"; fi
-    
+          if [ -z "${{ secrets.AZURE_CLIENT_SECRET }}" ]; then
+            echo "SECRET MISSING"
+          else
+            echo "SECRET OK"
+          fi
+          
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -55,7 +59,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-
+          
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
