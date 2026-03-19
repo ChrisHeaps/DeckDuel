@@ -29,13 +29,13 @@ jobs:
       - name: Build with dotnet
         run: dotnet build ./DeckDuelAPI/DeckDuelAPI.csproj --configuration Release
 
-      - name: dotnet publish
-        run: dotnet publish ./DeckDuelAPI/DeckDuelAPI.csproj -c Release -o ${{env.DOTNET_ROOT}}/myapp
-
       - name: Run EF Core migrations
         run: dotnet ef database update --project ./DeckDuelAPI/DeckDuelAPI.csproj
         env:
           ConnectionStrings__DefaultConnection: ${{ secrets.DB_CONNECTION_STRING }}
+          
+      - name: dotnet publish
+        run: dotnet publish ./DeckDuelAPI/DeckDuelAPI.csproj -c Release -o ${{env.DOTNET_ROOT}}/myapp    
       
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
