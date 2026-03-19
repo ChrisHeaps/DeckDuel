@@ -22,6 +22,10 @@ jobs:
           
       - name: Inject APPBASEURL for Vite production build
         run: echo "VITE_APPBASEURL=${{ secrets.APPBASEURL }}" > DeckDuelReactClient/.env.production
+
+      - name: Verify Vite env key exists
+        run: |
+          grep "^VITE_APPBASEURL=" DeckDuelReactClient/.env.production >/dev/null || (echo "VITE_APPBASEURL missing" && exit 1)
         
       - name: Build And Deploy
         id: builddeploy
