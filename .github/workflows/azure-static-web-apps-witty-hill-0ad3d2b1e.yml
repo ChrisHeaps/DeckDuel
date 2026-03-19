@@ -21,7 +21,7 @@ jobs:
           lfs: false
           
       - name: Inject APPBASEURL for Vite production build
-        run: echo "APPBASEURL=${{ secrets.APPBASEURL }}" > DeckDuelReactClient/.env.production
+        run: echo "VITE_APPBASEURL=${{ secrets.APPBASEURL }}" > DeckDuelReactClient/.env.production
         
       - name: Build And Deploy
         id: builddeploy
