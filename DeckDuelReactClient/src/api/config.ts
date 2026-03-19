@@ -1,4 +1,6 @@
-export const API_BASE_URL = "https://localhost:7119";
+const baseUrl = import.meta.env.VITE_APPBASEURL ?? "https://localhost:7119";
+
+export const API_BASE_URL = baseUrl.replace(/\/+$/, "");
 
 export function buildApiUrl(path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
