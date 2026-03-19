@@ -67,7 +67,10 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5174", "http://localhost:5173")
+        policy.WithOrigins("http://localhost:5174"
+                        , "http://localhost:5173"
+                        , "https://witty-hill-0ad3d2b1e.2.azurestaticapps.net"
+                        , "http://witty-hill-0ad3d2b1e.2.azurestaticapps.net")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials(); // important for SignalR from browser
