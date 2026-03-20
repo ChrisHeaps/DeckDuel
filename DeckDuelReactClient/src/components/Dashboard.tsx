@@ -45,7 +45,6 @@ export default function Dashboard() {
   const [myGames, setMyGames] = useState<GameInfo[]>([]);
   const [openGames, setOpenGames] = useState<OpenGameInfo[]>([]);
   const [myDecks, setMyDecks] = useState<DeckInfo[]>([]);
-  const [sharedDecks, setSharedDecks] = useState<DeckInfo[]>([]);
   const [loadingMyGames, setLoadingMyGames] = useState(true);
   const [loadingOpenGames, setLoadingOpenGames] = useState(true);
   const [loadingMyDecks, setLoadingMyDecks] = useState(true);
@@ -92,19 +91,6 @@ export default function Dashboard() {
     }
   }, []);
 
-  const fetchSharedDecks = useCallback(async () => {
-    try {
-      setLoadingSharedDecks(true);
-      const response = await apiFetch(buildApiUrl("/getSharedDeckNames"));
-      const data = await response.json();
-      setSharedDecks(data);
-    } catch (error) {
-      console.error("Failed to load shared decks:", error);
-    } finally {
-      setLoadingSharedDecks(false);
-    }
-  }, []);
-
   const fetchMyGamesRef = useRef(fetchMyGames);
   const fetchOpenGamesRef = useRef(fetchOpenGames);
 
@@ -144,8 +130,7 @@ export default function Dashboard() {
     fetchMyGames();
     fetchMyDecks();
     fetchOpenGames();
-    fetchSharedDecks();
-  }, [fetchMyGames, fetchMyDecks, fetchOpenGames, fetchSharedDecks]);
+  }, [fetchMyGames, fetchMyDecks, fetchOpenGames]);
 
   const handleOpenGameAction = async (game: OpenGameInfo) => {
     const endpoint = game.isOwned
