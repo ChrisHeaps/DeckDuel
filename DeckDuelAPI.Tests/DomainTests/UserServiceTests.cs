@@ -1,10 +1,12 @@
 using Xunit;
 using Moq;
 using FluentAssertions;
+using Microsoft.Extensions.Options;
 using DeckDuel2.Domain;
 using DeckDuel2.Repositories;
 using DeckDuel2.DTOs;
 using DeckDuel2.Models;
+using DeckDuel2.Configuration;
 
 namespace DeckDuel2.Tests.Services
 {
@@ -17,7 +19,8 @@ namespace DeckDuel2.Tests.Services
         public UserServiceTests()
         {
             _mockUserRepository = new Mock<IUserRepository>();
-            _userService = new UserService(_mockUserRepository.Object);
+            var jwtOptions = Options.Create(new JwtOptions { SigningKey = JwtSecret });
+            _userService = new UserService(_mockUserRepository.Object, jwtOptions);
         }
 
         [Fact(Skip = "Not ready to run yet")]
@@ -26,6 +29,7 @@ namespace DeckDuel2.Tests.Services
             // Arrange
             var userDto = new UserDto { Username = "testuser", Password = "password123", Email = "test@example.com" };
             _mockUserRepository.Setup(r => r.GetUserByUsernameAsync("testuser"))
+                // ReturnsAsync is an extension method from Moq
                 .ReturnsAsync((User)null);
 
             // Act
@@ -69,7 +73,7 @@ namespace DeckDuel2.Tests.Services
                 .ReturnsAsync(user);
 
             // Act
-            var result = await _userService.LoginAsync(loginDto, JwtSecret);
+            var result = await _userService.LoginAsync(loginDto);
 
             // Assert
             result.Success.Should().BeTrue();
@@ -88,7 +92,7 @@ namespace DeckDuel2.Tests.Services
                 .ReturnsAsync(user);
 
             // Act
-            var result = await _userService.LoginAsync(loginDto, JwtSecret);
+            var result = await _userService.LoginAsync(loginDto);
 
             // Assert
             result.Success.Should().BeFalse();
@@ -105,7 +109,7 @@ namespace DeckDuel2.Tests.Services
                 .ReturnsAsync((User)null);
 
             // Act
-            var result = await _userService.LoginAsync(loginDto, JwtSecret);
+            var result = await _userService.LoginAsync(loginDto);
 
             // Assert
             result.Success.Should().BeFalse();
@@ -117,7 +121,7 @@ namespace DeckDuel2.Tests.Services
         public async Task LoginAsync_WithNullLoginDto_ShouldReturnFailure()
         {
             // Act
-            var result = await _userService.LoginAsync(null, JwtSecret);
+            var result = await _userService.LoginAsync(null);
 
             // Assert
             result.Success.Should().BeFalse();
@@ -136,7 +140,7 @@ namespace DeckDuel2.Tests.Services
             var loginDto = new UserDto { Username = username, Password = password };
 
             // Act
-            var result = await _userService.LoginAsync(loginDto, JwtSecret);
+            var result = await _userService.LoginAsync(loginDto);
 
             // Assert
             result.Success.Should().BeFalse();
@@ -157,7 +161,7 @@ namespace DeckDuel2.Tests.Services
                 .ReturnsAsync(user);
 
             // Act
-            var result = await _userService.LoginAsync(loginDto, JwtSecret);
+            var result = await _userService.LoginAsync(loginDto);
 
             // Assert
             result.Success.Should().BeTrue();
