@@ -42,7 +42,7 @@ export default function GenerateDeck() {
 
     try {
       setLoading(true);
-      await apiFetch(buildApiUrl("/generateDeck"), {
+      await apiFetch(buildApiUrl("/decks"), {
         method: "POST",
         body: JSON.stringify({ deckPrompt: deckPrompt.trim() }),
       });

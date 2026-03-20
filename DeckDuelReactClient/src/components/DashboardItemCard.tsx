@@ -18,8 +18,8 @@ export default function DashboardItemCard({
   return (
     <Box
       onClick={onClick}
-      width="115px"
-      height="115px"
+      width="130px"
+      height="130px"
       p={2}
       bg={isOwned ? "teal.50" : "gray.100"}
       borderWidth="2px"
@@ -51,7 +51,11 @@ export default function DashboardItemCard({
         </Badge>
       ) : null}
 
-      <Text fontWeight={isOwned ? "bold" : "medium"} textAlign="center">
+      <Text
+        fontSize="sm"
+        fontWeight={isOwned ? "bold" : "medium"}
+        textAlign="center"
+      >
         {label}
       </Text>
     </Box>

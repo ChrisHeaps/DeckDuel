@@ -1,138 +1,131 @@
-﻿using DeckDuel2.Models;
-using System.Net.Http;
-using System.Text;
+﻿using Azure;
+using Azure.AI.OpenAI;
+using DeckDuel2.Configuration;
+using DeckDuel2.Models;
+using Microsoft.Extensions.Options;
+using OpenAI.Chat;
+using System.ClientModel;
 using System.Text.Json;
 
 namespace DeckDuel2.Domain
 {
-
     public class AIService
     {
+        private readonly ChatClient _chatClient;
 
-        private readonly HttpClient _httpClient;
-
-        public AIService(HttpClient client)
+        public AIService(IOptions<AzureOpenAIOptions> options)
         {
-            _httpClient = client;
-        }
+            var opts = options.Value;
+            var azureClient = new AzureOpenAIClient(
+                new Uri(opts.Endpoint),
+                new AzureKeyCredential(opts.ApiKey));
 
+            try
+            {
+                _chatClient = azureClient.GetChatClient(opts.DeploymentName);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"Azure OpenAI client failed.  Message={ex.Message}", ex);
+            }
+        }
 
         public async Task<Deck> GenerateDeckAsync(string topic)
         {
-            /*
+            const string systemPrompt = """
+                You are a card game deck generator.
+
+                When given a topic, respond with ONLY valid JSON.
+
+                The JSON MUST strictly follow the same structure, formatting, and style as the example below.
+
+                Rules:
+                - Generate exactly 4 categoryTypes with positions 1 through 4
+                - Generate exactly 30 unique cards
+                - Each card must have exactly 4 categories matching the 4 categoryType positions
+                - Scores must be integers between 1 and 100
+                - Return ONLY the JSON object, no markdown formatting or explanation
+                - Do not include any text outside the JSON
+                - Use the exact property names and casing
+                - Keep the same structure for categoryTypes and cards
+                - Each card must include a score for every category Position
+                - Position values must match those defined in categoryTypes
+                - Keep consistent formatting
+                - If you cannot generate valid JSON that matches the schema exactly, respond with: {""error"": ""generation_failed""}
+
+                Example format:
+                {
+                  "deck": {
+                    "topic": "Mythic Creatures",
+                    "categoryTypes": [
+                      {
+                        "Position": 1,
+                        "description": "Strength",
+                        "higherWins": true
+                      },
+                      {
+                        "Position": 2,
+                        "description": "Speed",
+                        "higherWins": true
+                      },
+                      {
+                        "Position": 3,
+                        "description": "Stealth",
+                        "higherWins": true
+                      },
+                      {
+                        "Position": 4,
+                        "description": "Rarity Rank",
+                        "higherWins": false
+                      }
+                    ],
+                    "cards": [
+                      {
+                        "name": "Emberfang Drake",
+                        "categories": [
+                          { "Position": 1, "score": 87 },
+                          { "Position": 2, "score": 72 },
+                          { "Position": 3, "score": 41 },
+                          { "Position": 4, "score": 9 }
+                        ]
+                      }
+                    ]
+                  }
+                }
+
+                """;
+
+            ChatCompletion response;
+            try
             {
-  "deck": {
-    "topic": "Mythic Creatures",
-    "categoryTypes": [
-      {
-        "Position": 1,
-        "description": "Strength",
-        "higherWins": true
-      },
-      {
-        "Position": 2,
-        "description": "Speed",
-        "higherWins": true
-      },
-      {
-        "Position": 3,
-        "description": "Stealth",
-        "higherWins": true
-      },
-      {
-        "Position": 4,
-        "description": "Rarity Rank",
-        "higherWins": false
-      }
-    ],
-    "cards": [
-      {       
-        "name": "Emberfang Drake",
-        "categories": [
-          { "Position": 1, "score": 87 },
-          { "Position": 2, "score": 72 },
-          { "Position": 3, "score": 41 },
-          { "Position": 4, "score": 9 }
-        ]
-      },
-      {        
-        "name": "Shadowmane Wraith",
-        "categories": [
-          { "Position": 1, "score": 63 },
-          { "Position": 2, "score": 89 },
-          { "Position": 3, "score": 95 },
-          { "Position": 4, "score": 4 }
-        ]
-      },
-      {        
-        "name": "Stonehide Behemoth",
-        "categories": [
-          { "Position": 1, "score": 98 },
-          { "Position": 2, "score": 28 },
-          { "Position": 3, "score": 15 },
-          { "Position": 4, "score": 12 }
-        ]
-      },
-      {        
-        "name": "Silverwing Seraph",
-        "categories": [
-          { "Position": 1, "score": 74 },
-          { "Position": 2, "score": 83 },
-          { "Position": 3, "score": 67 },
-          { "Position": 4, "score": 3 }
-        ]
-      },
-      {        
-        "name": "Bogroot Colossus",
-        "categories": [
-          { "Position": 1, "score": 91 },
-          { "Position": 2, "score": 34 },
-          { "Position": 3, "score": 22 },
-          { "Position": 4, "score": 15 }
-        ]
-      },
-      {        
-        "name": "Frostveil Phoenix",
-        "categories": [
-          { "Position": 1, "score": 79 },
-          { "Position": 2, "score": 88 },
-          { "Position": 3, "score": 53 },
-          { "Position": 4, "score": 6 }
-        ]
-      }
-    ]
-  }
-}
-            */
+                response = await _chatClient.CompleteChatAsync(
+                    [
+                        new SystemChatMessage(systemPrompt),
+                        new UserChatMessage($"Generate a deck for the topic: {topic}")
+                    ],
+                    new ChatCompletionOptions
+                    {
+                        ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat()
+                    });
+            }
+            catch (ClientResultException ex)
+            {
+                throw new InvalidOperationException(
+                    $"Azure OpenAI call failed. Status={ex.Status}, Message={ex.Message}", ex);
+            }
 
+            var json = response.Content[0].Text;
 
-
-            //var request = new HttpRequestMessage(HttpMethod.Get, "https://dummyjson.com/c/e8b1-1d42-485b-9c56");
-            var request = new HttpRequestMessage(HttpMethod.Get, "https://dummyjson.com/c/294c-7cc4-4755-a2bf");
-                //request.Headers.Add("Authorization", $"Bearer {_apiKey}");
-                //request.Content = new StringContent(
-                //    JsonSerializer.Serialize(requestBody),
-                //    Encoding.UTF8,
-                //    "application/json"
-                //);
-
-            var response = await _httpClient.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-
-            var json = await response.Content.ReadAsStringAsync();
-
-            // Deserialize directly from the JSON string (or use wrapper.RootElement.GetRawText())
-            var deck = JsonSerializer.Deserialize<DeckWrapper>(json, new JsonSerializerOptions
+            var wrapper = JsonSerializer.Deserialize<DeckWrapper>(json, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             });
 
-            if (deck == null)
-            {
-                throw new InvalidOperationException("Failed to deserialize Deck from response JSON.");
-            }
+            if (wrapper?.Deck == null)
+                throw new InvalidOperationException("Failed to deserialize Deck from AI response.");
 
-            return deck.Deck;
+            return wrapper.Deck;
         }
     }
 }

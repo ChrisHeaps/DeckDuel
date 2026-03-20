@@ -21,8 +21,6 @@ using System.Text.Json.Serialization;
 var builder = WebApplication.CreateBuilder(args);
 
 
-builder.Services.AddHttpClient<AIService>();
-
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 if (string.IsNullOrWhiteSpace(connectionString))
@@ -89,10 +87,17 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+builder.Services.AddOptions<AzureOpenAIOptions>()
+    .Bind(builder.Configuration.GetSection(AzureOpenAIOptions.SectionName))
+    .Validate(o => !string.IsNullOrWhiteSpace(o.Endpoint)
+                && !string.IsNullOrWhiteSpace(o.ApiKey)
+                && !string.IsNullOrWhiteSpace(o.DeploymentName),
+        "AzureOpenAI Endpoint, ApiKey and DeploymentName are all required.")
+    .ValidateOnStart();
+
+builder.Services.AddScoped<AIService>();
 builder.Services.AddSignalR();
-
 builder.Services.AddScoped<IGameRealtimeNotifier, GameRealtimeNotifier>();
-
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -108,7 +113,6 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddAuthorization();
-
 builder.Services.AddOpenApi(options => options.AddBearerSecurityScheme());
 
 

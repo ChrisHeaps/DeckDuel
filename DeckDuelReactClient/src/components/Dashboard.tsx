@@ -49,7 +49,6 @@ export default function Dashboard() {
   const [loadingMyGames, setLoadingMyGames] = useState(true);
   const [loadingOpenGames, setLoadingOpenGames] = useState(true);
   const [loadingMyDecks, setLoadingMyDecks] = useState(true);
-  const [loadingSharedDecks, setLoadingSharedDecks] = useState(true);
   const [actingGameId, setActingGameId] = useState<number | null>(null);
 
   const fetchMyGames = useCallback(async () => {
@@ -192,7 +191,7 @@ export default function Dashboard() {
           </Flex>
           {loadingMyGames ? <Spinner /> : null}
           {!loadingMyGames && myGames.length === 0 ? (
-            <Text color="gray.500">No games available</Text>
+            <Text color="gray.500">No games available - create a new game</Text>
           ) : null}
         </Stack>
       </Section>
@@ -285,24 +284,6 @@ export default function Dashboard() {
             <Text color="gray.500">No decks available</Text>
           ) : null}
         </Stack>
-      </Section>
-
-      <Section title="Shared Decks">
-        {loadingSharedDecks ? (
-          <Spinner />
-        ) : sharedDecks.length > 0 ? (
-          <Flex gap={4} flexWrap="wrap">
-            {sharedDecks.map((deck) => (
-              <DashboardItemCard
-                key={deck.id}
-                label={deck.topic}
-                onClick={() => navigate(`/deck/${deck.id}`)}
-              />
-            ))}
-          </Flex>
-        ) : (
-          <Text color="gray.500">No shared decks available</Text>
-        )}
       </Section>
     </Stack>
   );

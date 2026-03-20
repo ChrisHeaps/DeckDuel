@@ -17,13 +17,15 @@ export default function Layout() {
           alignItems="center"
           justifyContent="center"
           bg="gray.50"
+          overflow="hidden"
         >
           <Image
             src={loggedOutDash}
             alt="Please log in"
-            maxW="100%"
-            maxH="100%"
-            objectFit="contain"
+            width="100%"
+            height="100%"
+            objectFit="cover"
+            objectPosition="center"
           />
         </Box>
         <Box
@@ -35,7 +37,7 @@ export default function Layout() {
           textAlign="center"
           fontSize="sm"
         >
-          © 2026 Deck Duel. All rights reserved.
+          2026 Deck Duel. A Full Stack demo project - Chris Heaps.
         </Box>
       </Flex>
     );
@@ -58,7 +60,7 @@ export default function Layout() {
         textAlign="center"
         fontSize="sm"
       >
-        © 2026 Deck Duel. All rights reserved.
+        2026 Deck Duel. A Full Stack demo project - Chris Heaps.
       </Box>
     </Flex>
   );
