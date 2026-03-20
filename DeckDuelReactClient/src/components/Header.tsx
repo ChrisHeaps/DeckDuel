@@ -28,7 +28,14 @@ export default function Header() {
         color="white"
         boxShadow="md"
       >
-        <Heading size="md">Deck Duel</Heading>
+        <Heading
+          size="md"
+          fontFamily='"Bangers", "Luckiest Guy", "Impact", fantasy'
+          letterSpacing="0.5px"
+          fontWeight="800"
+        >
+          Deck Duel
+        </Heading>
         <Spacer />
 
         {isAuthenticated ? (
