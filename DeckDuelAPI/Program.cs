@@ -1,4 +1,5 @@
 using BCrypt.Net;
+using DeckDuel2.Configuration;
 using DeckDuel2.Data;
 using DeckDuel2.Domain;
 using DeckDuel2.DTOs;
@@ -8,12 +9,13 @@ using DeckDuel2.Models;
 using DeckDuel2.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
-using System.ComponentModel.DataAnnotations;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -38,7 +40,21 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         sqlOptions.CommandTimeout(60);
     }));
 
-var salt = "super_secret_demo_key_12345super_secret_demo_key_12345";
+builder.Services
+    .AddOptions<JwtOptions>()
+    .Bind(builder.Configuration.GetSection(JwtOptions.SectionName))
+    .Validate(options => !string.IsNullOrWhiteSpace(options.SigningKey), $"{JwtOptions.SectionName}:SigningKey is required.")
+    .ValidateOnStart();
+
+var jwtOptions = builder.Configuration
+    .GetSection(JwtOptions.SectionName)
+    .Get<JwtOptions>()
+    ?? throw new InvalidOperationException("Missing configuration section: Jwt");
+
+if (string.IsNullOrWhiteSpace(jwtOptions.SigningKey))
+{
+    throw new InvalidOperationException("Missing configuration value: Jwt:SigningKey");
+}
 
 builder.Services.AddAuthentication(options =>
 {
@@ -52,7 +68,7 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuer = false,
         ValidateAudience = false,
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(salt))
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey))
     };
 
     options.Events = new JwtBearerEvents
@@ -149,7 +165,7 @@ app.MapPost("/registerUser", async (UserDto userDto, IUserService userService) =
 
 app.MapPost("/login", async (UserDto login, IUserService userService, IUserRepository userRepo) =>
 {
-    var result = await userService.LoginAsync(login, salt);
+    var result = await userService.LoginAsync(login);
 
     if (!result.Success)
     {
@@ -174,7 +190,7 @@ app.MapPost("/login", async (UserDto login, IUserService userService, IUserRepos
     });
 });
 
-app.MapPost("/generateDeck", async (GenerateDeckRequestDto request, ClaimsPrincipal user, IDeckService deckService, IUserRepository userRepo) =>
+app.MapPost("/decks", async (GenerateDeckRequestDto request, ClaimsPrincipal user, IDeckService deckService, IUserRepository userRepo) =>
 {
     var validationResults = new List<ValidationResult>();
     var isValid = Validator.TryValidateObject(
