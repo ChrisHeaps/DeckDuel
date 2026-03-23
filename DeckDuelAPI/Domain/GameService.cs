@@ -147,19 +147,11 @@ namespace DeckDuel2.Domain
 
         public async Task<DDResult<Game>> TakeTurnAsync(int gameId, int userId, int categoryTypeId)
         {
-            var game = await _gameRepo.GetGameAsync(gameId);
-            if (game == null)
-                return DDResult<Game>.Fail(DDError.NotFound, "Game not found.");
+            var (game, userGame, error) = await ValidateAndLoadTurnContextAsync(gameId, userId);
+            if (error != null)
+                return error;
 
-            if (game.StartedAt == null || game.FinishedAt != null)
-                return DDResult<Game>.Fail(DDError.InvalidInput, "Game is not active.");
-
-            var userGame = await _gameRepo.GetUserGameAsync(gameId, userId);
-            if (userGame == null)
-                return DDResult<Game>.Fail(DDError.NotFound, "User is not in this game.");
-
-            
-            if (userGame.Id == game.CurrentRoundUserGameId)
+            if (userGame!.Id == game!.CurrentRoundUserGameId)
                 //starting player for round is kicking off new round
                 //add a new round with the categoryType chosen by this player for this round and
                 //set the RoundNumber to the Game CurrentRoundId
@@ -169,45 +161,22 @@ namespace DeckDuel2.Domain
                     CategoryTypeId = categoryTypeId,
                     RoundNumber = game.CurrentRoundNumber
                 });
-           
+
             var currentRound = await _gameRepo.GetRoundAsync(game.Id, game.CurrentRoundNumber);
 
             if (currentRound == null)
                 return DDResult<Game>.Fail(DDError.InvalidInput, "Current player has not yet chosen a category for this round.");
 
-            //first add a Turn for this player's move with the card they played
-            //(the left most card in their hand) i.e. the left most id from the
-            //comma separated string in Hand.CardList
-
-            //get the hand for this player and parse the CardList to get the first card id
-            var hand = await _gameRepo.GetHandAsync(userGame.Id, game.CurrentRoundNumber);
-            if (hand == null)
-                return DDResult<Game>.Fail(DDError.NotFound, "No hand for this player");
-
-            var firstCardId = hand.CardList?
-                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(x => int.TryParse(x, out var id) ? id : (int?)null)
-                    .FirstOrDefault(x => x.HasValue);
-
-            //only add a turn if the player has a card to play 
-            if (firstCardId != null)
-            {
-                //add a turn for this player with the chosen category and card
-                await _gameRepo.AddTurnAsync(new Turn
-                {
-                    RoundNumber = game.CurrentRoundNumber,
-                    UserGameId = userGame.Id,
-                    CardId = firstCardId.Value
-                });
-            }
+            var addTurnError = await AddTurnFromTopCardAsync(game, userGame);
+            if (addTurnError != null)
+                return addTurnError;
 
             //if we have a turn for each player in this round, then we can determine
             //the winner of the round and update the game state accordingly
             //(e.g. increment CurrentRoundId, set CurrentRoundUserGameId to the winner of the round, etc.)
-            var turns = await _gameRepo.GetTurnsForRoundAsync(game.Id, game.CurrentRoundNumber);
-            var userGames = await _gameRepo.GetUsersStillInGameAsync(game.Id, game.CurrentRoundNumber);
+            var (isRoundComplete, turns, userGames) = await GetRoundStateAsync(game);
 
-            if (turns.Length == userGames.Length)
+            if (isRoundComplete)
             {
 
                 // Get the category type to find the position for scoring
@@ -216,18 +185,7 @@ namespace DeckDuel2.Domain
                     return DDResult<Game>.Fail(DDError.NotFound, "Category type not found.");
 
                 // Get card details with scores for the chosen category
-                var turnScores = new List<(Turn turn, int cardId, int score)>();
-                foreach (var turn in turns)
-                {
-                    var card = await _gameRepo.GetCardAsync(turn.CardId);
-                    if (card == null) continue;
-
-                    // Find the category score at the chosen position
-                    var categoryScore = card.Categories
-                        .FirstOrDefault(c => c.Position == categoryType.Position)?.Score ?? 0;
-
-                    turnScores.Add((turn, card.Id, categoryScore));
-                }
+                var turnScores = await BuildTurnScoresAsync(turns, categoryType.Position);
 
                 if (turnScores.Count == 0)
                     return DDResult<Game>.Fail(DDError.InvalidInput, "No valid turns found.");
@@ -244,110 +202,15 @@ namespace DeckDuel2.Domain
                 var tiedPlayers = turnScores.Where(ts => ts.score == highestScore).ToList();
                 if (tiedPlayers.Count > 1)
                 {
-                    // It's a tie - add all played cards to the draw pile and start a new round with the same category
-                    var allPlayedCardIds = turnScores.Select(ts => ts.cardId).ToList();
-                    var existingDrawPile = string.IsNullOrWhiteSpace(game.DrawPileCardList)
-                        ? new List<int>()
-                        : game.DrawPileCardList.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                            .Select(x => int.TryParse(x, out var id) ? id : 0)
-                            .Where(x => x > 0)
-                            .ToList();
-                    existingDrawPile.AddRange(allPlayedCardIds);
-                    game.DrawPileCardList = string.Join(",", existingDrawPile);
-                    // Start new round with same category
-                    game.CurrentRoundNumber++;
-                    await _gameRepo.SaveChangesAsync();
-                    // Notify players of new round due to tie
-                    await _notifier.NotifyTurnChangedAsync(game.Id, game.CurrentRoundUserGameId, game.CurrentRoundNumber);
-                    return DDResult<Game>.Ok(game);
+                    return await ResolveTieAsync(game, turnScores);
                 }
-                else
-                {
 
-                    var winnerUserGameId = winner.turn.UserGameId;
-
-                    // Create new hands for all players
-                    foreach (var usersStillIn in userGames)
-                    {
-                        var ug = await _gameRepo.GetUserGameAsync(game.Id, usersStillIn);
-                        if (ug == null) continue;
-
-                        var currentHand = await _gameRepo.GetHandAsync(ug.Id, game.CurrentRoundNumber);
-                        if (currentHand == null) continue;
-
-                        var currentCards = currentHand.CardList
-                            .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                            .Select(x => int.TryParse(x, out var id) ? id : 0)
-                            .Where(x => x > 0)
-                            .ToList();
-
-                        // Find this player's played card
-                        var playedCardId = turnScores.FirstOrDefault(ts => ts.turn.UserGameId == ug.Id).cardId;
-
-                        // Remove the played card from hand
-                        currentCards.Remove(playedCardId);
-
-                        List<int> newHandCards;
-
-                        if (ug.Id == winnerUserGameId)
-                        {
-                            // Winner: add their played card back + all other played cards
-                            newHandCards = currentCards;
-                            newHandCards.Add(playedCardId); // their card first
-                            newHandCards.AddRange(allPlayedCards.Where(c => c != playedCardId)); // won cards
-                        }
-                        else
-                        {
-                            // Loser: just the remaining cards (already removed played card)
-                            newHandCards = currentCards;
-                        }
-
-                        // Only create hand if player has cards left
-                        if (newHandCards.Count > 0)
-                        {
-                            await _gameRepo.CreateHandAsync(
-                                game.Id,
-                                game.CurrentRoundNumber + 1,
-                                usersStillIn,
-                                string.Join(",", newHandCards)
-                            );
-                        }
-                    }
-
-                    //if at this point the winning player has Deck.Count cards they have won the game - set FinishedAt and return
-                    var winnerHand = await _gameRepo.GetHandAsync(winnerUserGameId, game.CurrentRoundNumber + 1);
-                    var winnerCardCount = string.IsNullOrWhiteSpace(winnerHand?.CardList)
-                        ? 0
-                        : winnerHand!.CardList
-                            .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                            .Length;
-                    var totalCardsInGame = await _gameRepo.GetTotalCardCountForGameAsync(game.Id);
-                    if (winnerCardCount >= totalCardsInGame)
-                    {
-                        game.FinishedAt = DateTime.UtcNow;
-                        game.WinningUserGameId = winnerUserGameId;
-
-                        // Move state to the hand round you just created
-                        game.CurrentRoundNumber++;
-                        game.CurrentRoundUserGameId = winnerUserGameId;
-
-                        await _gameRepo.SaveChangesAsync();
-                        await _notifier.NotifyGameFinishedAsync(game.Id);
-                        return DDResult<Game>.Ok(game);
-                    }
-
-                    // Advance to next round
-                    game.CurrentRoundNumber++;
-                    game.CurrentRoundUserGameId = winnerUserGameId; // winner chooses category next
-                    await _gameRepo.SaveChangesAsync();
-
-                    // Notify players
-                    await _notifier.NotifyTurnChangedAsync(game.Id, winnerUserGameId, game.CurrentRoundNumber);
-
-                    return DDResult<Game>.Ok(game);
-
-                }
-               
+                return await ResolveWinnerAsync(
+                    game,
+                    userGames,
+                    turnScores,
+                    allPlayedCards,
+                    winner.turn.UserGameId);
             }
 
             // if we reach here, a turn was taken but the round is not complete yet
@@ -486,16 +349,203 @@ namespace DeckDuel2.Domain
                     .InGameName;
 
             var dto = new GameStatusDto
-{
-    GameId = game.Id,
-    CurrentRoundCategoryName = categoryType?.Description,
-    Players = players,
-    IsGameOver = game.FinishedAt != null,
-    WinningUserGameId = game.WinningUserGameId,
-    WinningUserInGameName = winningUserInGameName
-};
+            {
+                GameId = game.Id,
+                CurrentRoundCategoryName = categoryType?.Description,
+                Players = players,
+                IsGameOver = game.FinishedAt != null,
+                WinningUserGameId = game.WinningUserGameId,
+                WinningUserInGameName = winningUserInGameName
+            };
 
             return DDResult<GameStatusDto>.Ok(dto);
+        }
+
+        private async Task<(Game? game, UserGame? userGame, DDResult<Game>? error)> ValidateAndLoadTurnContextAsync(int gameId, int userId)
+        {
+            var game = await _gameRepo.GetGameAsync(gameId);
+            if (game == null)
+                return (null, null, DDResult<Game>.Fail(DDError.NotFound, "Game not found."));
+
+            if (game.StartedAt == null || game.FinishedAt != null)
+                return (null, null, DDResult<Game>.Fail(DDError.InvalidInput, "Game is not active."));
+
+            var userGame = await _gameRepo.GetUserGameAsync(gameId, userId);
+            if (userGame == null)
+                return (null, null, DDResult<Game>.Fail(DDError.NotFound, "User is not in this game."));
+
+            return (game, userGame, null);
+        }
+
+        private async Task<DDResult<Game>?> AddTurnFromTopCardAsync(Game game, UserGame userGame)
+        {
+            //first add a Turn for this player's move with the card they played
+            //(the left most card in their hand) i.e. the left most id from the
+            //comma separated string in Hand.CardList
+
+            //get the hand for this player and parse the CardList to get the first card id
+            var hand = await _gameRepo.GetHandAsync(userGame.Id, game.CurrentRoundNumber);
+            if (hand == null)
+                return DDResult<Game>.Fail(DDError.NotFound, "No hand for this player");
+
+            var firstCardId = hand.CardList?
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(x => int.TryParse(x, out var id) ? id : (int?)null)
+                    .FirstOrDefault(x => x.HasValue);
+
+            //only add a turn if the player has a card to play 
+            if (firstCardId != null)
+            {
+                //add a turn for this player with the chosen category and card
+                await _gameRepo.AddTurnAsync(new Turn
+                {
+                    RoundNumber = game.CurrentRoundNumber,
+                    UserGameId = userGame.Id,
+                    CardId = firstCardId.Value
+                });
+            }
+
+            return null;
+        }
+
+        private async Task<(bool isRoundComplete, Turn[] turns, int[] userGames)> GetRoundStateAsync(Game game)
+        {
+            var turns = await _gameRepo.GetTurnsForRoundAsync(game.Id, game.CurrentRoundNumber);
+            var userGames = await _gameRepo.GetUsersStillInGameAsync(game.Id, game.CurrentRoundNumber);
+            return (turns.Length == userGames.Length, turns, userGames);
+        }
+
+        private async Task<List<(Turn turn, int cardId, int score)>> BuildTurnScoresAsync(Turn[] turns, int categoryPosition)
+        {
+            // Get card details with scores for the chosen category
+            var turnScores = new List<(Turn turn, int cardId, int score)>();
+
+            foreach (var turn in turns)
+            {
+                var card = await _gameRepo.GetCardAsync(turn.CardId);
+                if (card == null) continue;
+
+                // Find the category score at the chosen position
+                var categoryScore = card.Categories
+                    .FirstOrDefault(c => c.Position == categoryPosition)?.Score ?? 0;
+
+                turnScores.Add((turn, card.Id, categoryScore));
+            }
+
+            return turnScores;
+        }
+
+        private async Task<DDResult<Game>> ResolveTieAsync(Game game, List<(Turn turn, int cardId, int score)> turnScores)
+        {
+            // It's a tie - add all played cards to the draw pile and start a new round with the same category
+            var allPlayedCardIds = turnScores.Select(ts => ts.cardId).ToList();
+            var existingDrawPile = string.IsNullOrWhiteSpace(game.DrawPileCardList)
+                ? new List<int>()
+                : game.DrawPileCardList.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(x => int.TryParse(x, out var id) ? id : 0)
+                    .Where(x => x > 0)
+                    .ToList();
+
+            existingDrawPile.AddRange(allPlayedCardIds);
+            game.DrawPileCardList = string.Join(",", existingDrawPile);
+
+            // Start new round with same category
+            game.CurrentRoundNumber++;
+            await _gameRepo.SaveChangesAsync();
+
+            // Notify players of new round due to tie
+            await _notifier.NotifyTurnChangedAsync(game.Id, game.CurrentRoundUserGameId, game.CurrentRoundNumber);
+
+            return DDResult<Game>.Ok(game);
+        }
+
+        private async Task<DDResult<Game>> ResolveWinnerAsync(
+            Game game,
+            int[] userGames,
+            List<(Turn turn, int cardId, int score)> turnScores,
+            List<int> allPlayedCards,
+            int winnerUserGameId)
+        {
+            // Create new hands for all players
+            foreach (var usersStillIn in userGames)
+            {
+                var ug = await _gameRepo.GetUserGameAsync(game.Id, usersStillIn);
+                if (ug == null) continue;
+
+                var currentHand = await _gameRepo.GetHandAsync(ug.Id, game.CurrentRoundNumber);
+                if (currentHand == null) continue;
+
+                var currentCards = currentHand.CardList
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(x => int.TryParse(x, out var id) ? id : 0)
+                    .Where(x => x > 0)
+                    .ToList();
+
+                // Find this player's played card
+                var playedCardId = turnScores.FirstOrDefault(ts => ts.turn.UserGameId == ug.Id).cardId;
+
+                // Remove the played card from hand
+                currentCards.Remove(playedCardId);
+
+                List<int> newHandCards;
+
+                if (ug.Id == winnerUserGameId)
+                {
+                    // Winner: add their played card back + all other played cards
+                    newHandCards = currentCards;
+                    newHandCards.Add(playedCardId); // their card first
+                    newHandCards.AddRange(allPlayedCards.Where(c => c != playedCardId)); // won cards
+                }
+                else
+                {
+                    // Loser: just the remaining cards (already removed played card)
+                    newHandCards = currentCards;
+                }
+
+                // Only create hand if player has cards left
+                if (newHandCards.Count > 0)
+                {
+                    await _gameRepo.CreateHandAsync(
+                        game.Id,
+                        game.CurrentRoundNumber + 1,
+                        usersStillIn,
+                        string.Join(",", newHandCards)
+                    );
+                }
+            }
+
+            //if at this point the winning player has Deck.Count cards they have won the game - set FinishedAt and return
+            var winnerHand = await _gameRepo.GetHandAsync(winnerUserGameId, game.CurrentRoundNumber + 1);
+            var winnerCardCount = string.IsNullOrWhiteSpace(winnerHand?.CardList)
+                ? 0
+                : winnerHand!.CardList
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Length;
+
+            var totalCardsInGame = await _gameRepo.GetTotalCardCountForGameAsync(game.Id);
+            if (winnerCardCount >= totalCardsInGame)
+            {
+                game.FinishedAt = DateTime.UtcNow;
+                game.WinningUserGameId = winnerUserGameId;
+
+                // Move state to the hand round you just created
+                game.CurrentRoundNumber++;
+                game.CurrentRoundUserGameId = winnerUserGameId;
+
+                await _gameRepo.SaveChangesAsync();
+                await _notifier.NotifyGameFinishedAsync(game.Id);
+                return DDResult<Game>.Ok(game);
+            }
+
+            // Advance to next round
+            game.CurrentRoundNumber++;
+            game.CurrentRoundUserGameId = winnerUserGameId; // winner chooses category next
+            await _gameRepo.SaveChangesAsync();
+
+            // Notify players
+            await _notifier.NotifyTurnChangedAsync(game.Id, winnerUserGameId, game.CurrentRoundNumber);
+
+            return DDResult<Game>.Ok(game);
         }
     }
 }
