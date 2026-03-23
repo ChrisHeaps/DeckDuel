@@ -1,13 +1,17 @@
-name: Azure Static Web Apps CI/CD
+name: Azure Client CI/CD
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'DeckDuelReactClient/**'      
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
+    paths:
+      - 'DeckDuelReactClient/**' 
 
 jobs:
   build_and_deploy_job:
