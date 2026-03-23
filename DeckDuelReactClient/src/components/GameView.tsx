@@ -66,8 +66,7 @@ type GameStatusDto = {
 export default function GameView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { token } = useAuth();
-  const [turn, setTurn] = useState<TurnChangedPayload | null>(null);
+  const { token, inGameName } = useAuth();
   const [card, setCard] = useState<Card | null>(null);
   const [loadingCard, setLoadingCard] = useState(true);
   const [cardError, setCardError] = useState<string | null>(null);
@@ -150,7 +149,6 @@ export default function GameView() {
       TurnChanged: (payload: unknown) => {
         const turnPayload = payload as TurnChangedPayload;
         if (String(turnPayload.gameId) === String(resolvedGameId)) {
-          setTurn(turnPayload);
           fetchCardRef.current();
           fetchGameStatusRef.current();
         }
@@ -164,7 +162,7 @@ export default function GameView() {
     [resolvedGameId],
   );
 
-  const { connectionStatus, connectionError } = useGameHub({
+  useGameHub({
     token,
     handlers: hubHandlers,
     gameGroupId: resolvedGameId ?? undefined,
@@ -217,32 +215,12 @@ export default function GameView() {
 
       <Box bg="white" borderRadius="xl" boxShadow="sm" p={6} w="full">
         <VStack align="stretch" gap={4}>
-          <Heading size="lg">Game View</Heading>
-          <Text color="gray.600">UserGame ID: {id}</Text>
-          <Text>
-            Hub Status: <Text as="span">{connectionStatus}</Text>
-          </Text>
-          <Text>
-            Turn Status:{" "}
-            <Text as="span">{isMyTurn ? "My Turn" : "Opponent Turn"}</Text>
-          </Text>
-
-          {connectionError ? (
-            <Text color="red.500">{connectionError}</Text>
-          ) : !turn ? (
-            <Flex align="center" gap={3}>
-              <Spinner size="sm" />
-              <Text color="gray.600">Waiting for turn updates...</Text>
-            </Flex>
-          ) : (
-            <Box bg="gray.50" p={4} borderRadius="md">
-              <Text fontWeight="bold" mb={2}>
-                Latest Turn Update
-              </Text>
-              <Text>Turn Number: {turn.turnNumber}</Text>
-              <Text>Current Turn User ID: {turn.currentTurnUserId}</Text>
-            </Box>
-          )}
+          <Flex align="center" gap={3}>
+            <Spinner size="sm" />
+            <Text color="gray.700">
+              Turn Status: {isMyTurn ? "My Turn" : "Opponent Turn"}
+            </Text>
+          </Flex>
         </VStack>
       </Box>
 
@@ -255,6 +233,9 @@ export default function GameView() {
             const winningUserGameId =
               gameStatus.winningUserGameId ?? gameStatus.WinningUserGameId;
             const playerUserGameId = player.userGameId ?? player.UserGameId;
+            const isCurrentPlayer =
+              !!inGameName &&
+              player.inGameName.toLowerCase() === inGameName.toLowerCase();
 
             const isWinner =
               (winningUserGameId != null &&
@@ -262,26 +243,45 @@ export default function GameView() {
                 winningUserGameId === playerUserGameId) ||
               (!!winningName &&
                 player.inGameName.toLowerCase() === winningName.toLowerCase());
+            const isCurrentTurnPlayer =
+              isMyTurn && isCurrentPlayer && !gameFinished;
 
             return (
               <Box
                 key={player.inGameName}
-                bg={isWinner ? "yellow.50" : "white"}
+                bg={
+                  isWinner
+                    ? "yellow.50"
+                    : isCurrentTurnPlayer
+                      ? "teal.50"
+                      : "white"
+                }
                 borderRadius="lg"
                 boxShadow="sm"
                 p={4}
                 minW="160px"
                 borderWidth={isWinner ? "2px" : "1px"}
-                borderColor={isWinner ? "yellow.300" : "gray.200"}
+                borderColor={
+                  isWinner
+                    ? "yellow.300"
+                    : isCurrentTurnPlayer
+                      ? "teal.300"
+                      : "gray.200"
+                }
               >
                 <VStack align="stretch" gap={2}>
                   <HStack justify="space-between" align="start">
                     <Text fontWeight="bold" fontSize="sm">
                       {player.inGameName}
                     </Text>
-                    {isWinner ? (
-                      <Badge colorPalette="yellow">Winner!</Badge>
-                    ) : null}
+                    <HStack gap={2}>
+                      {isCurrentTurnPlayer ? (
+                        <Badge colorPalette="teal">Take your turn</Badge>
+                      ) : null}
+                      {isWinner ? (
+                        <Badge colorPalette="yellow">Winner!</Badge>
+                      ) : null}
+                    </HStack>
                   </HStack>
                   <HStack justify="space-between">
                     <Text fontSize="xs" color="gray.500">
@@ -292,7 +292,7 @@ export default function GameView() {
                   {player.currentTurnScore != null && (
                     <HStack justify="space-between">
                       <Text fontSize="xs" color="gray.500">
-                        Turn score
+                        {gameStatus.currentRoundCategoryName ?? "Turn score"}
                       </Text>
                       <Badge colorPalette="teal">
                         {player.currentTurnScore}
@@ -363,45 +363,44 @@ export default function GameView() {
                           isActiveCategory ? "teal.400" : undefined
                         }
                       >
-                        <HStack justify="space-between" mb={1}>
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            p={0}
-                            h="auto"
-                            minH="unset"
-                            fontWeight="medium"
-                            color={canSelectCategory ? "teal.700" : "gray.700"}
-                            cursor={canSelectCategory ? "pointer" : "default"}
-                            textDecoration={
-                              canSelectCategory ? "underline" : "none"
-                            }
-                            disabled={
-                              !canSelectCategory ||
-                              submittingCategoryId !== null
-                            }
-                            loading={submittingCategoryId === categoryTypeId}
-                            onClick={() => handleCategoryClick(categoryTypeId)}
-                          >
-                            {category.description}
-                          </Button>
-                          <Text fontWeight="bold" color="teal.600">
-                            {category.score}
-                          </Text>
-                        </HStack>
-                        <Box
-                          h="8px"
-                          bg="gray.200"
-                          borderRadius="full"
-                          overflow="hidden"
+                        <Button
+                          variant={canSelectCategory ? "outline" : "subtle"}
+                          size="sm"
+                          w="full"
+                          h="auto"
+                          py={2}
+                          px={3}
+                          colorPalette={isActiveCategory ? "teal" : "gray"}
+                          disabled={
+                            !canSelectCategory || submittingCategoryId !== null
+                          }
+                          loading={submittingCategoryId === categoryTypeId}
+                          onClick={() => handleCategoryClick(categoryTypeId)}
                         >
-                          <Box
-                            h="full"
-                            bg="teal.500"
-                            w={`${category.score}%`}
-                            transition="width 0.3s"
-                          />
-                        </Box>
+                          <VStack w="full" align="stretch" gap={2}>
+                            <HStack justify="space-between">
+                              <Text fontWeight="medium" color="gray.700">
+                                {category.description}
+                              </Text>
+                              <Text fontWeight="bold" color="teal.600">
+                                {category.score}
+                              </Text>
+                            </HStack>
+                            <Box
+                              h="8px"
+                              bg="gray.200"
+                              borderRadius="full"
+                              overflow="hidden"
+                            >
+                              <Box
+                                h="full"
+                                bg="teal.500"
+                                w={`${category.score}%`}
+                                transition="width 0.3s"
+                              />
+                            </Box>
+                          </VStack>
+                        </Button>
                       </Box>
                     );
                   })}
