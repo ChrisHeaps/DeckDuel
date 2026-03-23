@@ -9,7 +9,7 @@ The project consists of a .NET Minimal API backend and a React frontend client.
 React Client
      │
      ▼
-ASP.NET Core API
+ASP.NET Core API -> Azure OpenAI
      │
      ▼
 SQL Server
