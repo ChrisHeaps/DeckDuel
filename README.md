@@ -12,6 +12,12 @@ Deck Duel is a **Top Trumps-style card game** where players compete using dynami
 
 What makes it unique is the use of **AI-generated decks** — users provide a prompt, and the system generates themed card decks on the fly.
 
+To play go to the Azure hosted client:
+
+https://witty-hill-0ad3d2b1e.2.azurestaticapps.net/
+
+You can challenge a friend or play against yourself in two browsers with two accounts.
+
 ---
 
 ## 🚀 Features
