@@ -42,7 +42,7 @@ namespace DeckDuel2.Domain
 
                 Rules:
                 - Generate exactly 4 categoryTypes with positions 1 through 4
-                - Generate exactly 30 unique cards
+                - Generate exactly 20 unique cards
                 - Each card must have exactly 4 categories matching the 4 categoryType positions
                 - Scores must be integers between 1 and 100
                 - Return ONLY the JSON object, no markdown formatting or explanation
