@@ -13,28 +13,7 @@ namespace DeckDuel2.Repositories
         {
             _db = db;
         }
-
-        //public async Task<IEnumerable<Deck>> GetDeckNamesAsync()
-        //{
-        //    return await _db.Decks.ToListAsync();
-        //}
-
-        //public async Task<IEnumerable<Card>> GetDeckCardsAsync(int deckId)
-        //{
-        //    return await _db.Cards.Where(c => c.DeckId == deckId).ToListAsync();
-        //}
-
-        public async Task<DeckDto[]> GetSharedDeckNamesAsync()
-        {
-            return await _db.Decks
-                .Where(u => u.UserId == 1)
-                .Select(d => new DeckDto
-                {
-                    Id = d.Id,
-                    Topic = d.Topic
-                })
-                .ToArrayAsync();
-        }
+      
 
         public async Task<DeckDto[]> GetDeckNamesAsync(int userId)
         {
