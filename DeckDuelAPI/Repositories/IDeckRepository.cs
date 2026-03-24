@@ -6,8 +6,7 @@ using System.Threading.Tasks;
 namespace DeckDuel2.Repositories
 {
     public interface IDeckRepository
-    {
-        Task<DeckDto[]> GetSharedDeckNamesAsync();
+    {     
 
         Task<DeckDto[]> GetDeckNamesAsync(int userID);
 

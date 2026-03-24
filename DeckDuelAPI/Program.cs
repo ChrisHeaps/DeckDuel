@@ -138,6 +138,7 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+
 app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
@@ -145,12 +146,6 @@ app.UseAuthorization();
 
 
 //Configure endpoints
-
-app.MapGet("/getSharedDeckNames", async (IDeckRepository deckRepo) =>
-{
-    var decks = await deckRepo.GetSharedDeckNamesAsync();
-    return TypedResults.Ok(decks);
-}).WithName("GetSharedDeckNames");
 
 
 app.MapPost("/registerUser", async (UserDto userDto, IUserService userService) =>
