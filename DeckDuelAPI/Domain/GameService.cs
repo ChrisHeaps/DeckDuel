@@ -20,8 +20,7 @@ namespace DeckDuel2.Domain
     {
         private readonly IGameRepository _gameRepo;
         private readonly IGameRealtimeNotifier _notifier; 
-        private int _firstPlayerId;
-
+      
         public GameService(IGameRepository gameRepo, IGameRealtimeNotifier notifier) 
         {
             _gameRepo = gameRepo;
@@ -64,8 +63,7 @@ namespace DeckDuel2.Domain
             if (userGames == null)
                 return DDResult<Game>.Fail(DDError.InvalidInput, "No players in game.");
 
-            var firstPlayer = userGames[Random.Shared.Next(userGames.Length)];
-            _firstPlayerId = firstPlayer.Id;
+            var firstPlayer = userGames[Random.Shared.Next(userGames.Length)];           
             game.CurrentRoundUserGameId = firstPlayer.Id; // set the first player to choose category for the first round
                
            
