@@ -7,6 +7,7 @@ using DeckDuel2.Extensions;
 using DeckDuel2.Hubs;
 using DeckDuel2.Models;
 using DeckDuel2.Repositories;
+using DeckDuel2.Messaging;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -16,6 +17,8 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Serialization;
+using Azure.Messaging.ServiceBus;
+using DeckDuel2.Workers;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -95,6 +98,13 @@ builder.Services.AddOptions<AzureOpenAIOptions>()
         "AzureOpenAI Endpoint, ApiKey and DeploymentName are all required.")
     .ValidateOnStart();
 
+builder.Services.AddOptions<ServiceBusOptions>()
+    .Bind(builder.Configuration.GetSection(ServiceBusOptions.SectionName))
+    .Validate(o => !string.IsNullOrWhiteSpace(o.ConnectionString)
+                && !string.IsNullOrWhiteSpace(o.QueueName),
+        "ServiceBus ConnectionString and QueueName are all required.")
+    .ValidateOnStart();
+
 builder.Services.AddScoped<AIService>();
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IGameRealtimeNotifier, GameRealtimeNotifier>();
@@ -128,6 +138,16 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
 });
+
+builder.Services.AddSingleton(_ =>
+{
+    var client = new ServiceBusClient(
+        builder.Configuration["ServiceBus:ConnectionString"]);
+    return client.CreateSender(
+        builder.Configuration["ServiceBus:QueueName"]);
+});
+
+builder.Services.AddHostedService<TakeTurnWorker>();
 
 var app = builder.Build();
 
@@ -365,7 +385,13 @@ app.MapGet("/games/usergames/{userGameId:int}/card", async (int userGameId, Clai
     return Results.Ok(result.Value);
 }).WithName("GetCurrentHandTopCard").RequireAuthorization();
 
-app.MapPost("/games/usergames/{userGameId:int}/turns", async (int userGameId, TakeTurnDto dto, ClaimsPrincipal user, IGameService gameService, IGameRepository gameRepo, IUserRepository userRepo) =>
+app.MapPost("/games/usergames/{userGameId:int}/turns", async (
+    int userGameId,
+    TakeTurnDto dto,
+    ClaimsPrincipal user,
+    IGameRepository gameRepo,
+    IUserRepository userRepo,
+    ServiceBusSender sender) =>
 {
     var userEntity = await user.GetAuthenticatedUserAsync(userRepo);
     if (userEntity == null) return Results.Unauthorized();
@@ -373,23 +399,26 @@ app.MapPost("/games/usergames/{userGameId:int}/turns", async (int userGameId, Ta
     var userGame = await gameRepo.GetUserGameByIdAsync(userGameId);
     if (userGame == null) return Results.NotFound("UserGame not found.");
 
-    // Ensure caller can only play for their own userGame
     if (userGame.UserId != userEntity.Id) return Results.Unauthorized();
 
-    var result = await gameService.TakeTurnAsync(userGame.GameId, userEntity.Id, dto.CategoryTypeId);
-
-    if (!result.Success)
+    var message = new ServiceBusMessage(
+        BinaryData.FromObjectAsJson(new TakeTurnMessage
+        {
+            GameId    = userGame.GameId,
+            UserId    = userEntity.Id,
+            UserGameId = userGameId,
+            CategoryTypeId = dto.CategoryTypeId
+        }))
     {
-        if (result.ErrorType == DDError.NotFound) return Results.NotFound(result.Error);
-        return Results.Problem(
-            title: result.ErrorType.ToString(),
-            detail: result.Error,
-            statusCode: StatusCodes.Status400BadRequest
-        );
-    }
+        SessionId = userGame.GameId.ToString() //key: serialises per game
+    };
 
-    return Results.Ok(result.Value);
-}).WithName("TakeTurn").RequireAuthorization();
+    await sender.SendMessageAsync(message);
+
+    return Results.Accepted();
+})
+.WithName("TakeTurn")
+.RequireAuthorization();
 
 app.MapGet("/games/usergames/{userGameId:int}/status", async (int userGameId, ClaimsPrincipal user, IGameService gameService, IUserRepository userRepo) =>
 {
