@@ -25,7 +25,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="Messaging\" />
     <Folder Include="Migrations\" />
+    <Folder Include="Workers\" />
   </ItemGroup>
 
   <ItemGroup>
