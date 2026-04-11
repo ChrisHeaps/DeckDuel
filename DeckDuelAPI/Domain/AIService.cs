@@ -43,15 +43,17 @@ namespace DeckDuel2.Domain
                 Rules:
                 - Generate exactly 4 categoryTypes with positions 1 through 4
                 - Generate exactly 20 unique cards
+                - Try to use real people and things if possible before inventing names or items
                 - Each card must have exactly 4 categories matching the 4 categoryType positions
                 - Scores must be integers between 1 and 100
+                - Higher should always be better when comparing scores
                 - Return ONLY the JSON object, no markdown formatting or explanation
                 - Do not include any text outside the JSON
                 - Use the exact property names and casing
                 - Keep the same structure for categoryTypes and cards
                 - Each card must include a score for every category Position
                 - Position values must match those defined in categoryTypes
-                - Keep consistent formatting
+                - Keep consistent formatting                
                 - If you cannot generate valid JSON that matches the schema exactly, respond with: {""error"": ""generation_failed""}
 
                 Example format:
