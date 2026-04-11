@@ -435,7 +435,7 @@ namespace DeckDuel2.Domain
 
         private async Task<DDResult<Game>> ResolveTieAsync(Game game, List<(Turn turn, int cardId, int score)> turnScores)
         {
-            // It's a tie - add all played cards to the draw pile and start a new round with the same category
+            // It's a tie - add all played cards to the draw pile
             var allPlayedCardIds = turnScores.Select(ts => ts.cardId).ToList();
             var existingDrawPile = string.IsNullOrWhiteSpace(game.DrawPileCardList)
                 ? new List<int>()
@@ -447,7 +447,44 @@ namespace DeckDuel2.Domain
             existingDrawPile.AddRange(allPlayedCardIds);
             game.DrawPileCardList = string.Join(",", existingDrawPile);
 
-            // Start new round with same category
+            // Build next-round hands with played cards removed
+            var playersWhoPlayed = turnScores
+                .GroupBy(ts => ts.turn.UserGameId)
+                .Select(g => g.First());
+
+            foreach (var turnScore in playersWhoPlayed)
+            {
+                var currentHand = await _gameRepo.GetHandAsync(turnScore.turn.UserGameId, game.CurrentRoundNumber);
+                if (currentHand == null)
+                    continue;
+
+                var nextHandCards = string.IsNullOrWhiteSpace(currentHand.CardList)
+                    ? new List<int>()
+                    : currentHand.CardList
+                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(x => int.TryParse(x, out var id) ? id : 0)
+                        .Where(x => x > 0)
+                        .ToList();
+
+                // Remove the played card that was moved to draw pile
+                nextHandCards.Remove(turnScore.cardId);
+
+                // No hand created means player is out
+                if (nextHandCards.Count == 0)
+                    continue;
+
+                var userGame = await _gameRepo.GetUserGameByIdAsync(turnScore.turn.UserGameId);
+                if (userGame == null)
+                    continue;
+
+                await _gameRepo.CreateHandAsync(
+                    game.Id,
+                    game.CurrentRoundNumber + 1,
+                    userGame.UserId,
+                    string.Join(",", nextHandCards));
+            }
+
+            // Start new round with same category starter
             game.CurrentRoundNumber++;
             await _gameRepo.SaveChangesAsync();
 
@@ -464,6 +501,15 @@ namespace DeckDuel2.Domain
             List<int> allPlayedCards,
             int winnerUserGameId)
         {
+            // Parse tied cards already in draw pile (from previous tied rounds)
+            var drawPileCards = string.IsNullOrWhiteSpace(game.DrawPileCardList)
+                ? new List<int>()
+                : game.DrawPileCardList
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(x => int.TryParse(x, out var id) ? id : 0)
+                    .Where(x => x > 0)
+                    .ToList();
+
             // Create new hands for all players
             foreach (var usersStillIn in userGames)
             {
@@ -489,10 +535,11 @@ namespace DeckDuel2.Domain
 
                 if (ug.Id == winnerUserGameId)
                 {
-                    // Winner: add their played card back + all other played cards
+                    // Winner: add their played card back + all other played cards + draw pile cards
                     newHandCards = currentCards;
                     newHandCards.Add(playedCardId); // their card first
-                    newHandCards.AddRange(allPlayedCards.Where(c => c != playedCardId)); // won cards
+                    newHandCards.AddRange(allPlayedCards.Where(c => c != playedCardId)); // won cards from this round
+                    newHandCards.AddRange(drawPileCards); // won cards from tied rounds
                 }
                 else
                 {
@@ -511,6 +558,9 @@ namespace DeckDuel2.Domain
                     );
                 }
             }
+
+            // Winner has now claimed draw pile cards, so clear it
+            game.DrawPileCardList = string.Empty;
 
             //if at this point the winning player has Deck.Count cards they have won the game - set FinishedAt and return
             var winnerHand = await _gameRepo.GetHandAsync(winnerUserGameId, game.CurrentRoundNumber + 1);
