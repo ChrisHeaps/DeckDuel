@@ -26,6 +26,7 @@ You can challenge a friend or play against yourself in two browsers with two acc
 * Real-time game updates using SignalR
 * Full-stack architecture (React + .NET + SQL Server)
 * Cloud-native deployment on Azure
+* Sequential game turns through Azure Service Bus
 * Automated CI/CD pipelines via GitHub Actions
 * Unit tested backend
 
@@ -64,7 +65,7 @@ You can challenge a friend or play against yourself in two browsers with two acc
 | Component | Azure Service                           |
 | --------- | --------------------------------------- |
 | Client    | Azure Static Web Apps                   |
-| API       | Azure App Service                       |
+| API       | Azure App Service & Azure Service Bus   |
 | Database  | Azure SQL Database                      |
 | AI        | Azure OpenAI Service + Azure AI Foundry |
 

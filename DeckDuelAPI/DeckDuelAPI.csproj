@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.1.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.3" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
@@ -24,7 +25,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="Messaging\" />
     <Folder Include="Migrations\" />
+    <Folder Include="Workers\" />
   </ItemGroup>
 
   <ItemGroup>

@@ -19,6 +19,13 @@ yarn-error.log*
 # Environment files
 .env
 
+# ASP.NET Core sensitive configuration files
+**/appsettings.Development.json
+**/appsettings.Production.json
+**/appsettings.Local.json
+**/*.local.json
+**/secrets.json
+
 # OS files
 .DS_Store
 Thumbs.db

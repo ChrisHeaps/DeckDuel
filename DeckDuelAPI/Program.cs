@@ -123,6 +123,7 @@ builder.Services.AddScoped<IGameRepository, GameRepository>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IDeckService, DeckService>();
 builder.Services.AddScoped<IGameService, GameService>();
+builder.Services.AddSingleton<GameTurnLockProvider>();
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -143,9 +144,6 @@ app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
-
-
-//Configure endpoints
 
 
 app.MapPost("/registerUser", async (UserDto userDto, IUserService userService) =>
@@ -365,7 +363,14 @@ app.MapGet("/games/usergames/{userGameId:int}/card", async (int userGameId, Clai
     return Results.Ok(result.Value);
 }).WithName("GetCurrentHandTopCard").RequireAuthorization();
 
-app.MapPost("/games/usergames/{userGameId:int}/turns", async (int userGameId, TakeTurnDto dto, ClaimsPrincipal user, IGameService gameService, IGameRepository gameRepo, IUserRepository userRepo) =>
+app.MapPost("/games/usergames/{userGameId:int}/turns", async (
+    int userGameId,
+    TakeTurnDto dto,
+    ClaimsPrincipal user,
+    IGameRepository gameRepo,
+    IUserRepository userRepo,
+    IGameService gameService,
+    GameTurnLockProvider turnLockProvider) =>
 {
     var userEntity = await user.GetAuthenticatedUserAsync(userRepo);
     if (userEntity == null) return Results.Unauthorized();
@@ -373,23 +378,30 @@ app.MapPost("/games/usergames/{userGameId:int}/turns", async (int userGameId, Ta
     var userGame = await gameRepo.GetUserGameByIdAsync(userGameId);
     if (userGame == null) return Results.NotFound("UserGame not found.");
 
-    // Ensure caller can only play for their own userGame
     if (userGame.UserId != userEntity.Id) return Results.Unauthorized();
 
-    var result = await gameService.TakeTurnAsync(userGame.GameId, userEntity.Id, dto.CategoryTypeId);
+    var result = await turnLockProvider.RunAsync(
+        userGame.GameId,
+        () => gameService.TakeTurnAsync(userGame.GameId, userEntity.Id, dto.CategoryTypeId));
 
     if (!result.Success)
     {
-        if (result.ErrorType == DDError.NotFound) return Results.NotFound(result.Error);
+        if (result.ErrorType == DDError.NotFound)
+            return Results.NotFound(result.Error);
+
+        if (result.ErrorType == DDError.NotOwner)
+            return Results.Unauthorized();
+
         return Results.Problem(
             title: result.ErrorType.ToString(),
             detail: result.Error,
-            statusCode: StatusCodes.Status400BadRequest
-        );
+            statusCode: StatusCodes.Status400BadRequest);
     }
 
-    return Results.Ok(result.Value);
-}).WithName("TakeTurn").RequireAuthorization();
+    return Results.Accepted();
+})
+.WithName("TakeTurn")
+.RequireAuthorization();
 
 app.MapGet("/games/usergames/{userGameId:int}/status", async (int userGameId, ClaimsPrincipal user, IGameService gameService, IUserRepository userRepo) =>
 {
